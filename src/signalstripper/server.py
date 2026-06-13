@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import json
+import dataclasses
 from pathlib import Path
 from typing import Any
 
@@ -11,7 +11,9 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
 from signalstripper.analyze import GlobalSummary
+from signalstripper.emit import emit_reclaim_command
 from signalstripper.schema.registry import SchemaProfile
+from signalstripper.select import SelectionSet, ThreadSelection, validate_selection
 
 _STATIC_DIR = Path(__file__).parent / "static"
 
@@ -26,11 +28,9 @@ def create_app(db_path: Path, profile: SchemaProfile, summary: GlobalSummary, mo
     state: dict[str, Any] = {"db_path": db_path, "profile": profile, "summary": summary, "mock": mock}
 
     async def analyze_endpoint(request: Request) -> Response:
-        import dataclasses
         return JSONResponse(dataclasses.asdict(state["summary"]))
 
     async def threads_endpoint(request: Request) -> Response:
-        import dataclasses
         if state.get("mock"):
             from signalstripper.mock import _mock_thread_summaries
             return JSONResponse([dataclasses.asdict(t) for t in _mock_thread_summaries(state["summary"])])
@@ -39,7 +39,6 @@ def create_app(db_path: Path, profile: SchemaProfile, summary: GlobalSummary, mo
         return JSONResponse([dataclasses.asdict(t) for t in threads])
 
     async def messages_endpoint(request: Request) -> Response:
-        import dataclasses
         thread_id = int(request.path_params["thread_id"])
         if state.get("mock"):
             from signalstripper.mock import mock_messages
@@ -58,13 +57,20 @@ def create_app(db_path: Path, profile: SchemaProfile, summary: GlobalSummary, mo
         return JSONResponse(dataclasses.asdict(page))
 
     async def emit_endpoint(request: Request) -> Response:
-        from signalstripper.select import SelectionSet, ThreadSelection
-        from signalstripper.emit import emit_reclaim_command
-
         body = await request.json()
-        selections = [
-            ThreadSelection(**sel) for sel in body.get("selections", [])
-        ]
+        raw_selections = body.get("selections", [])
+        selections = []
+        for sel in raw_selections:
+            ts = ThreadSelection(
+                thread_id=int(sel["thread_id"]),
+                intent=sel["intent"],
+                date_after=sel.get("date_after"),
+                date_before=sel.get("date_before"),
+                min_size_bytes=sel.get("min_size_bytes"),
+                content_types=list(sel.get("content_types") or []),
+            )
+            validate_selection(ts)
+            selections.append(ts)
         sel_set = SelectionSet(selections=selections)
         output_path = Path(body.get("output_path", str(state["db_path"].with_suffix(".stripped.db"))))
         cmd = emit_reclaim_command(state["db_path"], output_path, sel_set, state["summary"])

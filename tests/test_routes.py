@@ -51,7 +51,8 @@ async def test_emit_endpoint(client):
     r = await client.post("/api/emit", json=payload)
     assert r.status_code == 200
     text = r.text
-    assert "--remove-attachments-from-thread" in text
+    assert "--replaceattachments" in text
+    assert "--onlyinthreads" in text
     assert "manually" in text.lower()
 
 

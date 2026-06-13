@@ -8,8 +8,6 @@ def main() -> None:
         prog="signalstripper",
         description="Signal Backup Analysis & Reclaim Tool",
     )
-    parser.add_argument("--db", type=Path, metavar="PATH", help="Path to decrypted Signal SQLite DB")
-
     sub = parser.add_subparsers(dest="command", metavar="COMMAND")
 
     analyze_p = sub.add_parser("analyze", help="Attribute storage by table/thread/type")

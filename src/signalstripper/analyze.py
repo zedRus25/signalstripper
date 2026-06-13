@@ -4,6 +4,7 @@ import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from signalstripper._db_utils import message_stats, recipient_display
 from signalstripper.schema.registry import SchemaProfile
 
 
@@ -42,9 +43,7 @@ def analyze(db_path: Path, profile: SchemaProfile) -> GlobalSummary:
         freelist_count = conn.execute("PRAGMA freelist_count").fetchone()[0]
         db_size_bytes = page_size * page_count
 
-        # Per-table page estimates via sqlite_master + dbstat if available
         table_sizes = _table_sizes(conn, page_size)
-
         threads = _thread_attributions(conn, profile)
         total_attachment_bytes = sum(t.attachment_bytes for t in threads)
 
@@ -66,22 +65,17 @@ def analyze(db_path: Path, profile: SchemaProfile) -> GlobalSummary:
 def _table_sizes(conn: sqlite3.Connection, page_size: int) -> dict[str, int]:
     try:
         rows = conn.execute(
-            "SELECT name, sum(pageno) as pages FROM dbstat GROUP BY name"
-        ).fetchall()
-        # dbstat.pageno is 1-based page number; what we want is page count per table
-        rows = conn.execute(
-            "SELECT name, count(*) as pages FROM dbstat GROUP BY name"
+            "SELECT name, count(*) AS pages FROM dbstat GROUP BY name"
         ).fetchall()
         return {row[0]: row[1] * page_size for row in rows}
     except sqlite3.OperationalError:
-        # dbstat not available in this SQLite build
+        # dbstat virtual table not compiled into this SQLite build
         return {}
 
 
 def _thread_attributions(conn: sqlite3.Connection, profile: SchemaProfile) -> list[SizeAttribution]:
     tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
 
-    # Collect threads
     thread_rows = conn.execute(
         "SELECT t._id, r.phone, r.profile_joined_name, r.group_id "
         "FROM thread t LEFT JOIN recipient r ON t.recipient_id = r._id"
@@ -90,17 +84,14 @@ def _thread_attributions(conn: sqlite3.Connection, profile: SchemaProfile) -> li
     attributions = []
     for row in thread_rows:
         thread_id = row[0]
-        display = _recipient_display(row[1], row[2], row[3])
-
-        msg_count, oldest, newest = _message_stats(conn, thread_id, tables)
+        display = recipient_display(row[1], row[2], row[3])
+        msg_count, oldest, newest = message_stats(conn, thread_id, tables)
         attachment_bytes, breakdown = _attachment_stats(conn, thread_id, profile)
-
-        total = attachment_bytes  # future: add body bytes if needed
 
         attributions.append(SizeAttribution(
             thread_id=thread_id,
             recipient_display=display,
-            total_bytes=total,
+            total_bytes=attachment_bytes,
             attachment_bytes=attachment_bytes,
             message_count=msg_count,
             oldest_message_ts=oldest,
@@ -110,40 +101,6 @@ def _thread_attributions(conn: sqlite3.Connection, profile: SchemaProfile) -> li
 
     attributions.sort(key=lambda a: a.total_bytes, reverse=True)
     return attributions
-
-
-def _recipient_display(phone: str | None, name: str | None, group_id: str | None) -> str:
-    if name:
-        return name
-    if phone:
-        return phone
-    if group_id:
-        return f"Group:{group_id[:8]}"
-    return "Unknown"
-
-
-def _message_stats(
-    conn: sqlite3.Connection, thread_id: int, tables: set[str]
-) -> tuple[int, int, int]:
-    count = 0
-    oldest = 0
-    newest = 0
-
-    for tbl in ("sms", "mms"):
-        if tbl not in tables:
-            continue
-        row = conn.execute(
-            f"SELECT count(*), min(date), max(date) FROM {tbl} WHERE thread_id = ?",
-            (thread_id,),
-        ).fetchone()
-        if row and row[0]:
-            count += row[0]
-            if row[1]:
-                oldest = row[1] if oldest == 0 else min(oldest, row[1])
-            if row[2]:
-                newest = max(newest, row[2])
-
-    return count, oldest, newest
 
 
 def _attachment_stats(

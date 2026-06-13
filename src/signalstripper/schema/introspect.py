@@ -8,9 +8,14 @@ from signalstripper.schema.registry import SchemaProfile, UnknownSchemaVersion, 
 
 
 class SchemaValidationError(Exception):
-    def __init__(self, message: str, missing_tables: list[str] = (), missing_columns: dict[str, list[str]] = {}) -> None:
-        self.missing_tables = list(missing_tables)
-        self.missing_columns = dict(missing_columns)
+    def __init__(
+        self,
+        message: str,
+        missing_tables: list[str] | None = None,
+        missing_columns: dict[str, list[str]] | None = None,
+    ) -> None:
+        self.missing_tables: list[str] = list(missing_tables) if missing_tables else []
+        self.missing_columns: dict[str, list[str]] = dict(missing_columns) if missing_columns else {}
         super().__init__(message)
 
 
@@ -59,7 +64,7 @@ def introspect(db_path: Path, profiles: dict[int, SchemaProfile] | None = None) 
         existing_tables = {
             row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
         }
-        missing_tables = []
+        missing_tables: list[str] = []
         missing_columns: dict[str, list[str]] = {}
         warnings: list[str] = []
 

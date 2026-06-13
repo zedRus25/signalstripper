@@ -21,7 +21,8 @@ def test_emit_strip_attachments(setup):
         ThreadSelection(thread_id=10, intent="strip_attachments")
     ])
     cmd = emit_reclaim_command(db_path, db_path.with_suffix(".stripped.db"), sel, summary)
-    assert "--remove-attachments-from-thread" in cmd
+    assert "--replaceattachments" in cmd
+    assert "--onlyinthreads" in cmd
     assert "10" in cmd
 
 
@@ -31,8 +32,14 @@ def test_emit_remove_thread(setup):
         ThreadSelection(thread_id=20, intent="remove_thread")
     ])
     cmd = emit_reclaim_command(db_path, db_path.with_suffix(".stripped.db"), sel, summary)
-    assert "--remove-thread" in cmd
-    assert "20" in cmd
+    # --croptothreads takes the complement (threads to KEEP)
+    assert "--croptothreads" in cmd
+    # Thread 20 is being removed, so it must not appear in the keep list
+    import re
+    croptothreads_match = re.search(r"--croptothreads[\s\\]+([0-9,]+)", cmd)
+    assert croptothreads_match, "Expected --croptothreads <ids> in command"
+    keep_ids = croptothreads_match.group(1).split(",")
+    assert "20" not in keep_ids
 
 
 def test_emit_contains_safety_header(setup):
@@ -64,9 +71,10 @@ def test_to_cli_args_strip(setup):
         ThreadSelection(thread_id=42, intent="strip_attachments", date_before=9999999999000)
     ])
     args = to_cli_args(sel)
-    assert "--remove-attachments-from-thread" in args
+    assert "--replaceattachments" in args
+    assert "--onlyinthreads" in args
     assert "42" in args
-    assert "--before-date" in args
+    assert "--onlyolderthan" in args
 
 
 def test_estimate_reclaim_remove_thread(setup):

@@ -6,6 +6,7 @@ import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
+from signalstripper._db_utils import message_stats, recipient_display
 from signalstripper.schema.registry import SchemaProfile
 
 
@@ -39,8 +40,8 @@ def list_threads(db_path: Path, profile: SchemaProfile) -> list[ThreadSummary]:
         summaries = []
         for row in rows:
             thread_id = row[0]
-            display = _recipient_display(row[1], row[2], row[3])
-            msg_count, oldest, newest = _message_stats(conn, thread_id, tables)
+            display = recipient_display(row[1], row[2], row[3])
+            msg_count, oldest, newest = message_stats(conn, thread_id, tables)
             att_count = _attachment_count(conn, thread_id)
             summaries.append(ThreadSummary(
                 thread_id=thread_id,
@@ -66,16 +67,13 @@ def get_messages(
     conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
     try:
-        # Decode cursor: {"last_date": int, "last_id": int, "source": "sms"|"mms"}
-        cursor_state = json.loads(base64.b64decode(cursor).decode()) if cursor else None
-
-        messages = _fetch_messages(conn, thread_id, before, after, cursor_state, page_size)
+        offset = json.loads(base64.b64decode(cursor).decode())["offset"] if cursor else 0
+        messages, has_more = _fetch_messages(conn, thread_id, before, after, offset, page_size)
 
         next_cursor = None
-        if len(messages) == page_size:
-            last = messages[-1]
+        if has_more:
             next_cursor = base64.b64encode(
-                json.dumps({"last_date": last["date"], "last_id": last["_id"], "source": last["source"]}).encode()
+                json.dumps({"offset": offset + len(messages)}).encode()
             ).decode()
 
         return MessagePage(thread_id=thread_id, messages=messages, cursor=next_cursor)
@@ -88,60 +86,50 @@ def _fetch_messages(
     thread_id: int,
     before: int | None,
     after: int | None,
-    cursor_state: dict | None,
+    offset: int,
     page_size: int,
-) -> list[dict]:
-    results = []
+) -> tuple[list[dict], bool]:
     tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
 
-    type_col = {"sms": "type", "mms": "m_type"}
+    parts: list[str] = []
+    params: list = []
     for source in ("sms", "mms"):
         if source not in tables:
             continue
+        type_col = "type" if source == "sms" else "m_type"
         clauses = ["thread_id = ?"]
-        params: list = [thread_id]
+        p: list = [thread_id]
         if before is not None:
             clauses.append("date < ?")
-            params.append(before)
+            p.append(before)
         if after is not None:
             clauses.append("date > ?")
-            params.append(after)
-        if cursor_state:
-            clauses.append("(date < ? OR (date = ? AND _id < ?))")
-            params += [cursor_state["last_date"], cursor_state["last_date"], cursor_state["last_id"]]
-
+            p.append(after)
         where = " AND ".join(clauses)
-        col = type_col[source]
-        rows = conn.execute(
-            f"SELECT _id, date, body, {col} AS msg_type FROM {source} WHERE {where} ORDER BY date DESC LIMIT ?",
-            params + [page_size],
-        ).fetchall()
+        parts.append(
+            f"SELECT _id, date, body, {type_col} AS msg_type, '{source}' AS src "
+            f"FROM {source} WHERE {where}"
+        )
+        params.extend(p)
 
-        for r in rows:
-            results.append({"_id": r[0], "date": r[1], "body": r[2], "type": r[3], "source": source})
+    if not parts:
+        return [], False
 
-    results.sort(key=lambda m: (m["date"], m["_id"]), reverse=True)
-    return results[:page_size]
+    union = " UNION ALL ".join(parts)
+    # Deterministic total order: date DESC, src DESC ('sms' > 'mms'), _id DESC
+    rows = conn.execute(
+        f"SELECT _id, date, body, msg_type, src FROM ({union}) "
+        f"ORDER BY date DESC, src DESC, _id DESC "
+        f"LIMIT ? OFFSET ?",
+        params + [page_size + 1, offset],
+    ).fetchall()
 
-
-def _message_stats(
-    conn: sqlite3.Connection, thread_id: int, tables: set[str]
-) -> tuple[int, int, int]:
-    count, oldest, newest = 0, 0, 0
-    for tbl in ("sms", "mms"):
-        if tbl not in tables:
-            continue
-        row = conn.execute(
-            f"SELECT count(*), min(date), max(date) FROM {tbl} WHERE thread_id = ?",
-            (thread_id,),
-        ).fetchone()
-        if row and row[0]:
-            count += row[0]
-            if row[1]:
-                oldest = row[1] if oldest == 0 else min(oldest, row[1])
-            if row[2]:
-                newest = max(newest, row[2])
-    return count, oldest, newest
+    has_more = len(rows) > page_size
+    rows = rows[:page_size]
+    return [
+        {"_id": r[0], "date": r[1], "body": r[2], "type": r[3], "source": r[4]}
+        for r in rows
+    ], has_more
 
 
 def _attachment_count(conn: sqlite3.Connection, thread_id: int) -> int:
@@ -153,13 +141,3 @@ def _attachment_count(conn: sqlite3.Connection, thread_id: int) -> int:
         return row[0] if row else 0
     except sqlite3.OperationalError:
         return 0
-
-
-def _recipient_display(phone: str | None, name: str | None, group_id: str | None) -> str:
-    if name:
-        return name
-    if phone:
-        return phone
-    if group_id:
-        return f"Group:{group_id[:8]}"
-    return "Unknown"

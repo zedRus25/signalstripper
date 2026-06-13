@@ -20,7 +20,7 @@ def emit_reclaim_command(
     estimated_gb = estimated_bytes / 1024**3
     date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-    args = to_cli_args(selection)
+    args = to_cli_args(selection, summary)
     cmd_parts = [
         shlex.quote(str(signalbackup_tools_path)),
         shlex.quote(str(db_path)),
