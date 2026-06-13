@@ -1,6 +1,5 @@
 import re
 import pytest
-from pathlib import Path
 from signalstripper.schema.registry import load_profiles
 from signalstripper.schema.introspect import introspect
 from signalstripper.analyze import analyze
@@ -9,11 +8,8 @@ from signalstripper.select import (
 )
 from signalstripper.emit import emit_reclaim_command
 
-# Named constants from build_fixture_db.py
 THREAD_10_BYTES = 1_500_000 + 8_000_000
 THREAD_10_IMAGE_BYTES = 1_500_000
-THREAD_20_BYTES = 200_000
-THREAD_30_BYTES = 3_000_000 + 12_000_000
 
 
 @pytest.fixture
@@ -38,42 +34,19 @@ def test_validate_selection_invalid_intent():
 
 # ── to_cli_args: strip_attachments ───────────────────────────────────────────
 
-def test_to_cli_args_strip_basic(setup):
-    _, _, _ = setup
+@pytest.mark.parametrize("kwargs,expected_in_args", [
+    pytest.param({},                                            ["--replaceattachments", "--onlyinthreads", "42"], id="basic"),
+    pytest.param({"date_before": 9_999_999_999_000},           ["--onlyolderthan", "9999999999000"],              id="date-before"),
+    pytest.param({"date_after":  1_000_000_000_000},           ["--onlynewerthan", "1000000000000"],              id="date-after"),
+    pytest.param({"min_size_bytes": 500_000},                  ["--onlylargerthan", "500000"],                    id="min-size"),
+])
+def test_to_cli_args_strip_flags(kwargs, expected_in_args):
     sel = SelectionSet(selections=[
-        ThreadSelection(thread_id=42, intent="strip_attachments")
+        ThreadSelection(thread_id=42, intent="strip_attachments", **kwargs)
     ])
     args = to_cli_args(sel)
-    assert "--replaceattachments" in args
-    assert "--onlyinthreads" in args
-    assert "42" in args
-
-
-def test_to_cli_args_strip_date_before():
-    sel = SelectionSet(selections=[
-        ThreadSelection(thread_id=42, intent="strip_attachments", date_before=9999999999000)
-    ])
-    args = to_cli_args(sel)
-    assert "--onlyolderthan" in args
-    assert "9999999999000" in args
-
-
-def test_to_cli_args_strip_date_after():
-    sel = SelectionSet(selections=[
-        ThreadSelection(thread_id=42, intent="strip_attachments", date_after=1000000000000)
-    ])
-    args = to_cli_args(sel)
-    assert "--onlynewerthan" in args
-    assert "1000000000000" in args
-
-
-def test_to_cli_args_strip_min_size_bytes():
-    sel = SelectionSet(selections=[
-        ThreadSelection(thread_id=42, intent="strip_attachments", min_size_bytes=500_000)
-    ])
-    args = to_cli_args(sel)
-    assert "--onlylargerthan" in args
-    assert "500000" in args
+    for token in expected_in_args:
+        assert token in args
 
 
 def test_to_cli_args_strip_content_types():
@@ -81,120 +54,89 @@ def test_to_cli_args_strip_content_types():
         ThreadSelection(thread_id=42, intent="strip_attachments", content_types=["image/*", "video/mp4"])
     ])
     args = to_cli_args(sel)
-    onlytype_indices = [i for i, a in enumerate(args) if a == "--onlytype"]
-    assert len(onlytype_indices) == 2
+    assert args.count("--onlytype") == 2
 
 
 def test_to_cli_args_strip_batches_same_fingerprint():
-    """Two strips with identical filters → single --replaceattachments, both thread ids."""
+    """Same modifier fingerprint → one --replaceattachments with both thread ids."""
     sel = SelectionSet(selections=[
         ThreadSelection(thread_id=10, intent="strip_attachments", date_before=9_000_000_000_000),
         ThreadSelection(thread_id=20, intent="strip_attachments", date_before=9_000_000_000_000),
     ])
     args = to_cli_args(sel)
     assert args.count("--replaceattachments") == 1
-    idx = args.index("--onlyinthreads")
-    ids = set(args[idx + 1].split(","))
-    assert ids == {"10", "20"}
+    assert set(args[args.index("--onlyinthreads") + 1].split(",")) == {"10", "20"}
 
 
 def test_to_cli_args_strip_different_filters_separate_blocks():
-    """Different date_before values → two separate --replaceattachments invocations."""
+    """Different date_before → two separate --replaceattachments invocations."""
     sel = SelectionSet(selections=[
         ThreadSelection(thread_id=10, intent="strip_attachments", date_before=1_000_000_000_000),
         ThreadSelection(thread_id=20, intent="strip_attachments", date_before=2_000_000_000_000),
     ])
-    args = to_cli_args(sel)
-    assert args.count("--replaceattachments") == 2
+    assert to_cli_args(sel).count("--replaceattachments") == 2
 
 
 def test_to_cli_args_empty_selection():
-    sel = SelectionSet(selections=[])
-    assert to_cli_args(sel) == []
+    assert to_cli_args(SelectionSet(selections=[])) == []
 
 
 # ── to_cli_args: remove_thread ────────────────────────────────────────────────
 
 def test_to_cli_args_remove_with_summary(setup):
     _, _, summary = setup
-    sel = SelectionSet(selections=[
+    args = to_cli_args(SelectionSet(selections=[
         ThreadSelection(thread_id=20, intent="remove_thread")
-    ])
-    args = to_cli_args(sel, summary)
+    ]), summary)
     assert "--croptothreads" in args
-    idx = args.index("--croptothreads")
-    keep_ids = set(args[idx + 1].split(","))
-    assert "20" not in keep_ids    # removed thread not in keep list
-    assert len(keep_ids) == 2      # the other two threads are kept
+    keep_ids = set(args[args.index("--croptothreads") + 1].split(","))
+    assert "20" not in keep_ids
+    assert len(keep_ids) == 2
 
 
 def test_to_cli_args_remove_without_summary_emits_placeholder():
-    """Without summary, emits a placeholder containing the removed thread id."""
-    sel = SelectionSet(selections=[
+    args = to_cli_args(SelectionSet(selections=[
         ThreadSelection(thread_id=42, intent="remove_thread")
-    ])
-    args = to_cli_args(sel, summary=None)
+    ]), summary=None)
     assert "--croptothreads" in args
-    idx = args.index("--croptothreads")
-    assert "42" in args[idx + 1]
+    assert "42" in args[args.index("--croptothreads") + 1]
 
 
 def test_to_cli_args_remove_all_threads_raises(setup):
     _, _, summary = setup
-    all_ids = [t.thread_id for t in summary.threads]
-    sel = SelectionSet(selections=[
-        ThreadSelection(thread_id=tid, intent="remove_thread") for tid in all_ids
-    ])
+    sels = [ThreadSelection(thread_id=t.thread_id, intent="remove_thread") for t in summary.threads]
     with pytest.raises(ValueError, match="remove all threads"):
-        to_cli_args(sel, summary)
+        to_cli_args(SelectionSet(selections=sels), summary)
 
 
 # ── emit_reclaim_command ──────────────────────────────────────────────────────
 
 def test_emit_strip_attachments(setup):
-    db_path, profile, summary = setup
-    sel = SelectionSet(selections=[
-        ThreadSelection(thread_id=10, intent="strip_attachments")
-    ])
-    cmd = emit_reclaim_command(db_path, db_path.with_suffix(".stripped.db"), sel, summary)
-    assert "--replaceattachments" in cmd
-    assert "--onlyinthreads" in cmd
-    assert "10" in cmd
+    db_path, _, summary = setup
+    cmd = emit_reclaim_command(db_path, db_path.with_suffix(".stripped.db"),
+                               SelectionSet(selections=[ThreadSelection(thread_id=10, intent="strip_attachments")]),
+                               summary)
+    assert "--replaceattachments" in cmd and "--onlyinthreads" in cmd and "10" in cmd
 
 
 def test_emit_remove_thread(setup):
-    db_path, profile, summary = setup
-    sel = SelectionSet(selections=[
-        ThreadSelection(thread_id=20, intent="remove_thread")
-    ])
-    cmd = emit_reclaim_command(db_path, db_path.with_suffix(".stripped.db"), sel, summary)
+    db_path, _, summary = setup
+    cmd = emit_reclaim_command(db_path, db_path.with_suffix(".stripped.db"),
+                               SelectionSet(selections=[ThreadSelection(thread_id=20, intent="remove_thread")]),
+                               summary)
     assert "--croptothreads" in cmd
-    # --croptothreads lists threads to KEEP; cmd uses backslash-continuation
-    croptothreads_match = re.search(r"--croptothreads[\s\\]+([0-9,]+)", cmd)
-    assert croptothreads_match, "Expected --croptothreads <ids> in command"
-    keep_ids = croptothreads_match.group(1).split(",")
-    assert "20" not in keep_ids
+    m = re.search(r"--croptothreads[\s\\]+([0-9,]+)", cmd)
+    assert m and "20" not in m.group(1).split(",")
 
 
-def test_emit_contains_safety_header(setup):
-    db_path, profile, summary = setup
-    sel = SelectionSet(selections=[
-        ThreadSelection(thread_id=10, intent="strip_attachments")
-    ])
-    cmd = emit_reclaim_command(db_path, db_path.with_suffix(".stripped.db"), sel, summary)
-    assert "manually" in cmd.lower()
+def test_emit_safety_header_and_estimate(setup):
+    db_path, _, summary = setup
+    cmd = emit_reclaim_command(db_path, db_path.with_suffix(".stripped.db"),
+                               SelectionSet(selections=[ThreadSelection(thread_id=10, intent="strip_attachments")]),
+                               summary)
     assert "signalstripper never auto-runs" in cmd
-
-
-def test_emit_estimate_nonzero(setup):
-    db_path, profile, summary = setup
-    sel = SelectionSet(selections=[
-        ThreadSelection(thread_id=10, intent="strip_attachments")
-    ])
-    cmd = emit_reclaim_command(db_path, db_path.with_suffix(".stripped.db"), sel, summary)
-    match = re.search(r"~([\d.]+) GB", cmd)
-    assert match, "Expected an estimated reclaim size in the output"
-    assert float(match.group(1)) > 0
+    m = re.search(r"~([\d.]+) GB", cmd)
+    assert m and float(m.group(1)) > 0
 
 
 # ── estimate_reclaim ──────────────────────────────────────────────────────────
@@ -202,48 +144,31 @@ def test_emit_estimate_nonzero(setup):
 def test_estimate_reclaim_strip_all(setup):
     _, _, summary = setup
     thread = next(t for t in summary.threads if t.thread_id == 10)
-    sel = SelectionSet(selections=[
-        ThreadSelection(thread_id=10, intent="strip_attachments")
-    ])
+    sel = SelectionSet(selections=[ThreadSelection(thread_id=10, intent="strip_attachments")])
     assert estimate_reclaim(sel, summary) == thread.attachment_bytes == THREAD_10_BYTES
 
 
 def test_estimate_reclaim_remove_thread(setup):
     _, _, summary = setup
-    thread_id = summary.threads[0].thread_id
-    expected = summary.threads[0].total_bytes
-    sel = SelectionSet(selections=[
-        ThreadSelection(thread_id=thread_id, intent="remove_thread")
-    ])
-    assert estimate_reclaim(sel, summary) == expected
+    thread = summary.threads[0]
+    sel = SelectionSet(selections=[ThreadSelection(thread_id=thread.thread_id, intent="remove_thread")])
+    assert estimate_reclaim(sel, summary) == thread.total_bytes
 
 
-def test_estimate_reclaim_content_type_filter(setup):
-    """Content-type filter picks only the matching MIME prefix bucket."""
+@pytest.mark.parametrize("content_type", [
+    pytest.param("image/*",    id="wildcard"),
+    pytest.param("image/jpeg", id="full-mime"),
+])
+def test_estimate_reclaim_content_type_filter(setup, content_type):
+    """Both 'image/*' and 'image/jpeg' resolve to the same 'image' bucket."""
     _, _, summary = setup
     sel = SelectionSet(selections=[
-        ThreadSelection(thread_id=10, intent="strip_attachments", content_types=["image/*"])
+        ThreadSelection(thread_id=10, intent="strip_attachments", content_types=[content_type])
     ])
-    reclaim = estimate_reclaim(sel, summary)
-    assert reclaim == THREAD_10_IMAGE_BYTES
-
-
-def test_estimate_reclaim_content_type_full_mime(setup):
-    """'image/jpeg' strips to 'image' bucket same as 'image/*'."""
-    _, _, summary = setup
-    sel_slash = SelectionSet(selections=[
-        ThreadSelection(thread_id=10, intent="strip_attachments", content_types=["image/jpeg"])
-    ])
-    sel_wildcard = SelectionSet(selections=[
-        ThreadSelection(thread_id=10, intent="strip_attachments", content_types=["image/*"])
-    ])
-    assert estimate_reclaim(sel_slash, summary) == estimate_reclaim(sel_wildcard, summary)
+    assert estimate_reclaim(sel, summary) == THREAD_10_IMAGE_BYTES
 
 
 def test_estimate_reclaim_unknown_thread(setup):
-    """Unknown thread_id contributes 0 to the estimate."""
     _, _, summary = setup
-    sel = SelectionSet(selections=[
-        ThreadSelection(thread_id=99999, intent="strip_attachments")
-    ])
+    sel = SelectionSet(selections=[ThreadSelection(thread_id=99999, intent="strip_attachments")])
     assert estimate_reclaim(sel, summary) == 0

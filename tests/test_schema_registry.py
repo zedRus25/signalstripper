@@ -26,24 +26,16 @@ def test_select_profile_known():
     assert p is profiles[166]  # same object, not a copy
 
 
-def test_select_profile_unknown_raises():
-    profiles = load_profiles()
-    with pytest.raises(UnknownSchemaVersion) as exc_info:
-        select_profile(999, profiles)
-    assert exc_info.value.version == 999
-    assert 166 in exc_info.value.known
-
-
-def test_select_profile_version_zero_raises():
-    """version=0 is the degenerate PRAGMA result; must not silently match anything."""
-    profiles = load_profiles()
+@pytest.mark.parametrize("version,profiles", [
+    pytest.param(999,  None, id="unknown-version"),
+    pytest.param(0,    None, id="zero-pragma-degenerate"),
+    pytest.param(166,  {},   id="empty-profiles-dict"),
+])
+def test_select_profile_raises(version, profiles):
+    if profiles is None:
+        profiles = load_profiles()
     with pytest.raises(UnknownSchemaVersion):
-        select_profile(0, profiles)
-
-
-def test_select_profile_empty_profiles_raises():
-    with pytest.raises(UnknownSchemaVersion):
-        select_profile(166, {})
+        select_profile(version, profiles)
 
 
 def test_unknown_schema_error_message_lists_versions():

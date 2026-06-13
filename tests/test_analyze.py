@@ -5,13 +5,10 @@ from signalstripper.schema.registry import load_profiles
 from signalstripper.schema.introspect import introspect
 from signalstripper.analyze import analyze, _table_sizes
 
-# Named constants derived from tests/fixtures/build_fixture_db.py
-# Thread 10: image/jpeg 1.5 MB + video/mp4 8 MB
-# Thread 20: application/pdf 200 KB
-# Thread 30: image/png 3 MB + video/mp4 12 MB
-THREAD_10_BYTES = 1_500_000 + 8_000_000
-THREAD_20_BYTES = 200_000
-THREAD_30_BYTES = 3_000_000 + 12_000_000
+# Named constants matching tests/fixtures/build_fixture_db.py
+THREAD_10_BYTES = 1_500_000 + 8_000_000   # image/jpeg + video/mp4
+THREAD_20_BYTES = 200_000                   # application/pdf
+THREAD_30_BYTES = 3_000_000 + 12_000_000   # image/png + video/mp4
 TOTAL_ATTACHMENT_BYTES = THREAD_10_BYTES + THREAD_20_BYTES + THREAD_30_BYTES
 
 
@@ -22,18 +19,10 @@ def summary(db_v166):
     return analyze(db_v166, result.profile), db_v166
 
 
-def test_total_attachment_bytes(summary):
+def test_global_summary(summary):
     s, _ = summary
     assert s.total_attachment_bytes == TOTAL_ATTACHMENT_BYTES
-
-
-def test_thread_count(summary):
-    s, _ = summary
     assert len(s.threads) == 3
-
-
-def test_schema_version(summary):
-    s, _ = summary
     assert s.schema_version == 166
 
 
@@ -42,10 +31,8 @@ def test_no_writes_to_db(summary):
     mtime_before = os.path.getmtime(db_path)
     profiles = load_profiles()
     from signalstripper.schema.introspect import introspect as intr
-    result = intr(db_path, profiles)
-    analyze(db_path, result.profile)
-    mtime_after = os.path.getmtime(db_path)
-    assert mtime_before == mtime_after, "analyze() must not modify the DB file"
+    analyze(db_path, intr(db_path, profiles).profile)
+    assert os.path.getmtime(db_path) == mtime_before, "analyze() must not modify the DB file"
 
 
 def test_threads_sorted_by_size_descending(summary):
@@ -61,20 +48,16 @@ def test_breakdown_keys_are_mime_prefixes(summary):
             assert "/" not in key, f"breakdown key should be MIME prefix only, got {key!r}"
 
 
-def test_per_thread_attachment_bytes(summary):
+@pytest.mark.parametrize("thread_id,expected_bytes,expected_breakdown", [
+    (10, THREAD_10_BYTES, {"image": 1_500_000, "video": 8_000_000}),
+    (20, THREAD_20_BYTES, {"application": 200_000}),
+    (30, THREAD_30_BYTES, {"image": 3_000_000, "video": 12_000_000}),
+])
+def test_per_thread_attribution(summary, thread_id, expected_bytes, expected_breakdown):
     s, _ = summary
-    by_id = {t.thread_id: t for t in s.threads}
-    assert by_id[10].attachment_bytes == THREAD_10_BYTES
-    assert by_id[20].attachment_bytes == THREAD_20_BYTES
-    assert by_id[30].attachment_bytes == THREAD_30_BYTES
-
-
-def test_per_thread_breakdown(summary):
-    s, _ = summary
-    by_id = {t.thread_id: t for t in s.threads}
-    assert by_id[10].breakdown == {"image": 1_500_000, "video": 8_000_000}
-    assert by_id[20].breakdown == {"application": 200_000}
-    assert by_id[30].breakdown == {"image": 3_000_000, "video": 12_000_000}
+    thread = next(t for t in s.threads if t.thread_id == thread_id)
+    assert thread.attachment_bytes == expected_bytes
+    assert thread.breakdown == expected_breakdown
 
 
 def test_table_sizes_fallback_when_dbstat_unavailable():
@@ -85,5 +68,4 @@ def test_table_sizes_fallback_when_dbstat_unavailable():
                 raise sqlite3.OperationalError("no such table: dbstat")
             raise AssertionError(f"Unexpected query: {sql}")
 
-    result = _table_sizes(NoDbstatConn(), page_size=4096)
-    assert result == {}
+    assert _table_sizes(NoDbstatConn(), page_size=4096) == {}
