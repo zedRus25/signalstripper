@@ -61,15 +61,18 @@ def create_app(db_path: Path, profile: SchemaProfile, summary: GlobalSummary, mo
         raw_selections = body.get("selections", [])
         selections = []
         for sel in raw_selections:
-            ts = ThreadSelection(
-                thread_id=int(sel["thread_id"]),
-                intent=sel["intent"],
-                date_after=sel.get("date_after"),
-                date_before=sel.get("date_before"),
-                min_size_bytes=sel.get("min_size_bytes"),
-                content_types=list(sel.get("content_types") or []),
-            )
-            validate_selection(ts)
+            try:
+                ts = ThreadSelection(
+                    thread_id=int(sel["thread_id"]),
+                    intent=sel["intent"],
+                    date_after=sel.get("date_after"),
+                    date_before=sel.get("date_before"),
+                    min_size_bytes=sel.get("min_size_bytes"),
+                    content_types=list(sel.get("content_types") or []),
+                )
+                validate_selection(ts)
+            except (ValueError, KeyError, TypeError) as exc:
+                return JSONResponse({"error": str(exc)}, status_code=422)
             selections.append(ts)
         sel_set = SelectionSet(selections=selections)
         output_path = Path(body.get("output_path", str(state["db_path"].with_suffix(".stripped.db"))))

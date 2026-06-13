@@ -1,7 +1,13 @@
+import time
 import pytest
 from signalstripper.schema.registry import load_profiles
 from signalstripper.schema.introspect import introspect
 from signalstripper.browse import list_threads, get_messages
+
+# Thread 10: 10 sms + 2 mms = 12 messages total
+THREAD_10_MSG_COUNT = 12
+# Thread 20: 10 sms + 1 mms = 11 messages
+THREAD_20_MSG_COUNT = 11
 
 
 @pytest.fixture
@@ -27,8 +33,7 @@ def test_thread_has_attachment_count(db_v166, profile):
 
 def test_get_messages_thread10(db_v166, profile):
     page = get_messages(db_v166, profile, thread_id=10)
-    # Thread 10 has 10 sms + 2 mms = 12 messages
-    assert len(page.messages) == 12
+    assert len(page.messages) == THREAD_10_MSG_COUNT
     assert page.cursor is None  # all fit in default page of 50
 
 
@@ -45,16 +50,59 @@ def test_get_messages_pagination(db_v166, profile):
     assert page3.cursor is None
 
 
-def test_get_messages_date_filter(db_v166, profile):
-    import time
+def test_get_messages_page_size_one(db_v166, profile):
+    """Boundary: page_size=1 yields exactly one message and a next cursor."""
+    page = get_messages(db_v166, profile, thread_id=10, page_size=1)
+    assert len(page.messages) == 1
+    assert page.cursor is not None
+
+
+def test_get_messages_page_size_exceeds_total(db_v166, profile):
+    """page_size larger than message count: all messages returned, cursor is None."""
+    page = get_messages(db_v166, profile, thread_id=10, page_size=1000)
+    assert len(page.messages) == THREAD_10_MSG_COUNT
+    assert page.cursor is None
+
+
+def test_get_messages_after_filter(db_v166, profile):
     cutoff = int(time.time() * 1000) - 3 * 86_400_000  # 3 days ago
     page = get_messages(db_v166, profile, thread_id=10, after=cutoff)
-    # Only messages newer than 3 days ago should appear
     for msg in page.messages:
         assert msg["date"] > cutoff
+
+
+def test_get_messages_before_filter(db_v166, profile):
+    cutoff = int(time.time() * 1000) - 3 * 86_400_000  # 3 days ago
+    page = get_messages(db_v166, profile, thread_id=10, before=cutoff)
+    for msg in page.messages:
+        assert msg["date"] < cutoff
+
+
+def test_get_messages_date_window(db_v166, profile):
+    """Combined before+after: only messages strictly within the window are returned."""
+    now = int(time.time() * 1000)
+    after = now - 6 * 86_400_000
+    before = now - 2 * 86_400_000
+    page = get_messages(db_v166, profile, thread_id=10, after=after, before=before)
+    for msg in page.messages:
+        assert after < msg["date"] < before
+
+
+def test_get_messages_empty_thread(db_v166, profile):
+    """Thread ID that has no messages returns empty list and no cursor."""
+    page = get_messages(db_v166, profile, thread_id=99999)
+    assert page.messages == []
+    assert page.cursor is None
 
 
 def test_messages_ordered_descending(db_v166, profile):
     page = get_messages(db_v166, profile, thread_id=10)
     dates = [m["date"] for m in page.messages]
     assert dates == sorted(dates, reverse=True)
+
+
+def test_get_messages_mms_only_thread(db_v166, profile):
+    """Thread 30 has only MMS rows — verify correct cross-table query with no sms rows."""
+    page = get_messages(db_v166, profile, thread_id=30)
+    assert len(page.messages) == 2
+    assert all(m["source"] == "mms" for m in page.messages)
