@@ -1,3 +1,4 @@
+import base64
 import time
 import pytest
 from signalstripper.schema.registry import load_profiles
@@ -73,6 +74,17 @@ def test_get_messages_empty_thread(db_v166, profile):
 def test_messages_ordered_descending(db_v166, profile):
     dates = [m["date"] for m in get_messages(db_v166, profile, thread_id=10).messages]
     assert dates == sorted(dates, reverse=True)
+
+
+@pytest.mark.parametrize("bad_cursor", [
+    pytest.param("!!!", id="invalid-base64"),
+    pytest.param(base64.b64encode(b"not json").decode(), id="valid-b64-bad-json"),
+    pytest.param(base64.b64encode(b'{"nope": 1}').decode(), id="json-missing-offset"),
+    pytest.param(base64.b64encode(b'{"offset": -5}').decode(), id="negative-offset"),
+])
+def test_get_messages_rejects_malformed_cursor(db_v166, profile, bad_cursor):
+    with pytest.raises(ValueError):
+        get_messages(db_v166, profile, thread_id=10, cursor=bad_cursor)
 
 
 def test_get_messages_mms_only_thread(db_v166, profile):

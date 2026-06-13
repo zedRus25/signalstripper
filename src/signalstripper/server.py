@@ -46,14 +46,17 @@ def create_app(db_path: Path, profile: SchemaProfile, summary: GlobalSummary, mo
             return JSONResponse(dataclasses.asdict(page))
         from signalstripper.browse import get_messages
         params = request.query_params
-        page = get_messages(
-            state["db_path"],
-            state["profile"],
-            thread_id,
-            before=int(params["before"]) if "before" in params else None,
-            after=int(params["after"]) if "after" in params else None,
-            cursor=params.get("cursor"),
-        )
+        try:
+            page = get_messages(
+                state["db_path"],
+                state["profile"],
+                thread_id,
+                before=int(params["before"]) if "before" in params else None,
+                after=int(params["after"]) if "after" in params else None,
+                cursor=params.get("cursor"),
+            )
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=422)
         return JSONResponse(dataclasses.asdict(page))
 
     async def emit_endpoint(request: Request) -> Response:

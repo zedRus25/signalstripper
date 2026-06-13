@@ -74,6 +74,12 @@ async def test_messages_endpoint_before_filter(client):
         assert msg["date"] < cutoff
 
 
+async def test_messages_endpoint_bad_cursor(client):
+    r = await client.get("/api/threads/10/messages?cursor=!!!")
+    assert r.status_code == 422
+    assert "error" in r.json()
+
+
 async def test_emit_endpoint_strip(client):
     payload = {"selections": [{"thread_id": 10, "intent": "strip_attachments"}]}
     r = await client.post("/api/emit", json=payload)
