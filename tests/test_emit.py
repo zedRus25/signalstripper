@@ -135,8 +135,23 @@ def test_emit_safety_header_and_estimate(setup):
                                SelectionSet(selections=[ThreadSelection(thread_id=10, intent="strip_attachments")]),
                                summary)
     assert "signalstripper never auto-runs" in cmd
-    m = re.search(r"~([\d.]+) GB", cmd)
+    # Decimal (SI) units, matching the UI tally's fmtBytes — fixture reclaim is MB-scale.
+    m = re.search(r"~([\d.]+) (B|KB|MB|GB)", cmd)
     assert m and float(m.group(1)) > 0
+
+
+def test_emit_estimate_matches_human_bytes(setup):
+    """The printed estimate uses the same decimal formatter as the UI tally,
+    so the two surfaces never disagree (regression: GB binary vs SI mismatch)."""
+    from signalstripper.emit import _human_bytes
+    db_path, _, summary = setup
+    sel = SelectionSet(selections=[
+        ThreadSelection(thread_id=10, intent="strip_attachments"),
+        ThreadSelection(thread_id=20, intent="remove_thread"),
+    ])
+    expected = _human_bytes(estimate_reclaim(sel, summary))
+    cmd = emit_reclaim_command(db_path, db_path.with_suffix(".stripped.db"), sel, summary)
+    assert f"# Estimated reclaim: ~{expected}\n" in cmd
 
 
 # ── estimate_reclaim ──────────────────────────────────────────────────────────
