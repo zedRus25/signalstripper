@@ -22,23 +22,30 @@ class NonLoopbackBindError(ValueError):
     pass
 
 
-def create_app(db_path: Path, profile: SchemaProfile, summary: GlobalSummary) -> Starlette:
-    state: dict[str, Any] = {"db_path": db_path, "profile": profile, "summary": summary}
+def create_app(db_path: Path, profile: SchemaProfile, summary: GlobalSummary, mock: bool = False) -> Starlette:
+    state: dict[str, Any] = {"db_path": db_path, "profile": profile, "summary": summary, "mock": mock}
 
     async def analyze_endpoint(request: Request) -> Response:
         import dataclasses
         return JSONResponse(dataclasses.asdict(state["summary"]))
 
     async def threads_endpoint(request: Request) -> Response:
-        from signalstripper.browse import list_threads
         import dataclasses
+        if state.get("mock"):
+            from signalstripper.mock import _mock_thread_summaries
+            return JSONResponse([dataclasses.asdict(t) for t in _mock_thread_summaries(state["summary"])])
+        from signalstripper.browse import list_threads
         threads = list_threads(state["db_path"], state["profile"])
         return JSONResponse([dataclasses.asdict(t) for t in threads])
 
     async def messages_endpoint(request: Request) -> Response:
-        from signalstripper.browse import get_messages
         import dataclasses
         thread_id = int(request.path_params["thread_id"])
+        if state.get("mock"):
+            from signalstripper.mock import mock_messages
+            page = mock_messages(thread_id)
+            return JSONResponse(dataclasses.asdict(page))
+        from signalstripper.browse import get_messages
         params = request.query_params
         page = get_messages(
             state["db_path"],

@@ -8,40 +8,61 @@
 </head>
 <body>
   <header>
-    <h1>signalstripper</h1>
-    <p class="subtitle">Signal Backup Analysis &amp; Reclaim Tool</p>
+    <div class="header-inner">
+      <div>
+        <h1>signalstripper</h1>
+        <p class="subtitle">Signal Backup Analysis &amp; Reclaim Tool</p>
+      </div>
+      <div id="db-info" class="db-info"></div>
+    </div>
   </header>
 
   <main>
-    <section id="analyze-section">
-      <h2>Storage Attribution</h2>
-      <div id="summary"></div>
+    <!-- Storage breakdown -->
+    <section id="overview-section">
+      <h2>Storage breakdown</h2>
+      <div id="overview-grid" class="overview-grid"></div>
+      <div id="table-breakdown"></div>
     </section>
 
+    <!-- Thread selection -->
     <section id="threads-section">
-      <h2>Threads</h2>
-      <table id="threads-table">
-        <thead>
-          <tr>
-            <th><input type="checkbox" id="select-all"></th>
-            <th>Conversation</th>
-            <th>Messages</th>
-            <th>Attachments</th>
-            <th>Size</th>
-            <th>Date range</th>
-            <th>Intent</th>
-          </tr>
-        </thead>
-        <tbody id="threads-body"></tbody>
-      </table>
+      <div class="section-header">
+        <h2>Conversations</h2>
+        <div class="toolbar">
+          <label class="toolbar-item">
+            <input type="checkbox" id="select-all"> Select all
+          </label>
+          <span class="toolbar-sep"></span>
+          <label class="toolbar-item">
+            Sort by
+            <select id="sort-by">
+              <option value="size">Size</option>
+              <option value="messages">Messages</option>
+              <option value="name">Name</option>
+            </select>
+          </label>
+        </div>
+      </div>
+      <div id="threads-list" class="threads-list"></div>
     </section>
 
+    <!-- Reclaim tally + emit -->
     <section id="emit-section">
-      <h2>Generate Reclaim Command</h2>
-      <p class="note">The command is shown below for manual review and execution. signalstripper never runs it.</p>
-      <div id="estimate"></div>
-      <button id="generate-btn">Generate command</button>
-      <pre id="command-output"></pre>
+      <h2>Reclaim command</h2>
+      <div class="tally-bar">
+        <div class="tally-main">
+          <span class="tally-label">Selected reclaim</span>
+          <span id="tally-bytes" class="tally-value">0 B</span>
+        </div>
+        <div class="tally-sub" id="tally-breakdown"></div>
+      </div>
+      <div class="emit-controls">
+        <button id="generate-btn" class="btn-primary">Generate command</button>
+        <button id="copy-btn" class="btn-secondary" disabled>Copy</button>
+        <span class="emit-note">signalstripper never auto-runs the command below</span>
+      </div>
+      <pre id="command-output" class="command-output hidden"></pre>
     </section>
   </main>
 

@@ -21,7 +21,8 @@ def main() -> None:
                         help="Write command to file instead of stdout")
 
     serve_p = sub.add_parser("serve", help="Launch the local selection UI")
-    serve_p.add_argument("--db", type=Path, required=True, metavar="PATH")
+    serve_p.add_argument("--db", type=Path, default=None, metavar="PATH")
+    serve_p.add_argument("--mock", action="store_true", help="Use built-in mock data (no DB required)")
     serve_p.add_argument("--host", default="127.0.0.1", metavar="HOST")
     serve_p.add_argument("--port", type=int, default=8765, metavar="PORT")
 
@@ -58,13 +59,27 @@ def _cmd_emit(args: argparse.Namespace) -> None:
 
 
 def _cmd_serve(args: argparse.Namespace) -> None:
-    from signalstripper.schema.registry import load_profiles
-    from signalstripper.schema.introspect import introspect
-    from signalstripper.analyze import analyze
     from signalstripper.server import create_app, serve
 
-    profiles = load_profiles()
-    result = introspect(args.db, profiles)
-    summary = analyze(args.db, result.profile)
-    app = create_app(args.db, result.profile, summary)
+    if args.mock:
+        from signalstripper.mock import mock_profile, mock_summary
+        from pathlib import Path
+        profile = mock_profile()
+        summary = mock_summary()
+        db_path = Path("/mock/signal.db")
+    else:
+        if not args.db:
+            import sys
+            print("error: --db PATH is required unless --mock is set", file=sys.stderr)
+            sys.exit(1)
+        from signalstripper.schema.registry import load_profiles
+        from signalstripper.schema.introspect import introspect
+        from signalstripper.analyze import analyze
+        profiles = load_profiles()
+        result = introspect(args.db, profiles)
+        summary = analyze(args.db, result.profile)
+        profile = result.profile
+        db_path = args.db
+
+    app = create_app(db_path, profile, summary, mock=getattr(args, "mock", False))
     serve(app, host=args.host, port=args.port)
