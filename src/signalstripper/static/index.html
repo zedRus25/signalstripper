@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>signalstripper</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <div>
+        <h1>signalstripper</h1>
+        <p class="subtitle">Signal Backup Analysis &amp; Reclaim Tool</p>
+      </div>
+      <div id="db-info" class="db-info"></div>
+    </div>
+  </header>
+
+  <main>
+    <!-- Storage breakdown -->
+    <section id="overview-section">
+      <h2>Storage breakdown</h2>
+      <div id="overview-grid" class="overview-grid"></div>
+      <div id="table-breakdown"></div>
+    </section>
+
+    <!-- Thread selection -->
+    <section id="threads-section">
+      <div class="section-header">
+        <h2>Conversations</h2>
+        <div class="toolbar">
+          <label class="toolbar-item">
+            <input type="checkbox" id="select-all"> Select all
+          </label>
+          <span class="toolbar-sep"></span>
+          <label class="toolbar-item">
+            Sort by
+            <select id="sort-by">
+              <option value="size">Size</option>
+              <option value="messages">Messages</option>
+              <option value="name">Name</option>
+            </select>
+          </label>
+        </div>
+      </div>
+      <div id="threads-list" class="threads-list"></div>
+    </section>
+
+    <!-- Reclaim tally + emit -->
+    <section id="emit-section">
+      <h2>Reclaim command</h2>
+      <div class="tally-bar">
+        <div class="tally-main">
+          <span class="tally-label">Selected reclaim</span>
+          <span id="tally-bytes" class="tally-value">0 B</span>
+        </div>
+        <div class="tally-sub" id="tally-breakdown"></div>
+      </div>
+      <div class="emit-controls">
+        <button id="generate-btn" class="btn-primary">Generate command</button>
+        <button id="copy-btn" class="btn-secondary" disabled>Copy</button>
+        <span class="emit-note">signalstripper never auto-runs the command below</span>
+      </div>
+      <pre id="command-output" class="command-output hidden"></pre>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>

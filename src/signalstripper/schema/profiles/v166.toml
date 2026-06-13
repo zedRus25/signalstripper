@@ -1,0 +1,16 @@
+version = 166
+description = "Signal Android circa 2023-Q3"
+
+[required_tables]
+"sms"       = ["_id", "thread_id", "date", "body", "type"]
+"mms"       = ["_id", "thread_id", "date", "body", "m_type"]
+"part"      = ["_id", "mid", "ct", "data_size", "unique_id"]
+"thread"    = ["_id", "recipient_id", "date", "snippet"]
+"recipient" = ["_id", "phone", "profile_joined_name", "group_id"]
+
+[size_queries]
+attachments_by_thread = """
+    SELECT p._id, p.data_size, p.ct
+    FROM part p JOIN mms m ON p.mid = m._id
+    WHERE m.thread_id = ?
+"""
