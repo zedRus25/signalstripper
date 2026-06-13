@@ -244,9 +244,12 @@ function updateSelectAll() {
 }
 
 document.getElementById('select-all').addEventListener('change', e => {
+  // Capture desired state before the loop — updateSelectAll() called from
+  // each cb's change handler mutates e.target.checked mid-loop otherwise.
+  const shouldCheck = e.target.checked;
   document.querySelectorAll('.thread-check').forEach(cb => {
-    if (cb.checked !== e.target.checked) {
-      cb.checked = e.target.checked;
+    if (cb.checked !== shouldCheck) {
+      cb.checked = shouldCheck;
       cb.dispatchEvent(new Event('change'));
     }
   });
