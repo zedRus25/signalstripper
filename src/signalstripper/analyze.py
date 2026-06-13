@@ -85,13 +85,13 @@ def _thread_attributions(conn: sqlite3.Connection, profile: SchemaProfile) -> li
     for row in thread_rows:
         thread_id = row[0]
         display = recipient_display(row[1], row[2], row[3])
-        msg_count, oldest, newest = message_stats(conn, thread_id, tables)
+        msg_count, oldest, newest, body_bytes = message_stats(conn, thread_id, tables)
         attachment_bytes, breakdown = _attachment_stats(conn, thread_id, profile)
 
         attributions.append(SizeAttribution(
             thread_id=thread_id,
             recipient_display=display,
-            total_bytes=attachment_bytes,
+            total_bytes=attachment_bytes + body_bytes,
             attachment_bytes=attachment_bytes,
             message_count=msg_count,
             oldest_message_ts=oldest,

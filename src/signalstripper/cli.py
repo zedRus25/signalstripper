@@ -23,8 +23,6 @@ def main() -> None:
     serve_p.add_argument("--mock", action="store_true", help="Use built-in mock data (no DB required)")
     serve_p.add_argument("--host", default="127.0.0.1", metavar="HOST")
     serve_p.add_argument("--port", type=int, default=8765, metavar="PORT")
-    serve_p.add_argument("--dev-expose", action="store_true",
-                         help="DEV ONLY: bind on 0.0.0.0 (bypasses loopback guard for remote testing)")
 
     args = parser.parse_args()
 
@@ -63,13 +61,11 @@ def _cmd_serve(args: argparse.Namespace) -> None:
 
     if args.mock:
         from signalstripper.mock import mock_profile, mock_summary
-        from pathlib import Path
         profile = mock_profile()
         summary = mock_summary()
         db_path = Path("/mock/signal.db")
     else:
         if not args.db:
-            import sys
             print("error: --db PATH is required unless --mock is set", file=sys.stderr)
             sys.exit(1)
         from signalstripper.schema.registry import load_profiles
@@ -82,12 +78,4 @@ def _cmd_serve(args: argparse.Namespace) -> None:
         db_path = args.db
 
     app = create_app(db_path, profile, summary, mock=getattr(args, "mock", False))
-    host = args.host
-    if getattr(args, "dev_expose", False):
-        import sys
-        print("WARNING: --dev-expose is active. Binding on 0.0.0.0 for remote dev access only.", file=sys.stderr)
-        host = "0.0.0.0"
-        import uvicorn
-        uvicorn.run(app, host=host, port=args.port)
-        return
-    serve(app, host=host, port=args.port)
+    serve(app, host=args.host, port=args.port)

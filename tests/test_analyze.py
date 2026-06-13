@@ -60,6 +60,18 @@ def test_per_thread_attribution(summary, thread_id, expected_bytes, expected_bre
     assert thread.breakdown == expected_breakdown
 
 
+def test_total_bytes_includes_message_body(summary):
+    """total_bytes attributes message text on top of attachments, so
+    remove_thread reclaim estimates are not undercounted."""
+    s, _ = summary
+    for thread in s.threads:
+        assert thread.total_bytes >= thread.attachment_bytes
+    t10 = next(t for t in s.threads if t.thread_id == 10)
+    # 10 sms bodies ("sms body N" = 10 bytes) + 2 mms ("image msg"/"video msg" = 9 bytes)
+    expected_body = 10 * 10 + 9 + 9
+    assert t10.total_bytes == t10.attachment_bytes + expected_body
+
+
 def test_table_sizes_fallback_when_dbstat_unavailable():
     """When dbstat raises OperationalError, _table_sizes returns {} without crashing."""
     class NoDbstatConn:

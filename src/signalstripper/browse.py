@@ -10,6 +10,24 @@ from signalstripper._db_utils import message_stats, recipient_display
 from signalstripper.schema.registry import SchemaProfile
 
 
+def _decode_cursor(cursor: str | None) -> int:
+    """Decode an opaque pagination cursor into a row offset.
+
+    Raises ValueError on any malformed cursor so callers can surface a 4xx
+    rather than an uncaught 500.
+    """
+    if not cursor:
+        return 0
+    try:
+        offset = json.loads(base64.b64decode(cursor).decode())["offset"]
+    except (ValueError, KeyError, TypeError) as exc:
+        # binascii.Error and json.JSONDecodeError both subclass ValueError.
+        raise ValueError("invalid cursor") from exc
+    if not isinstance(offset, int) or offset < 0:
+        raise ValueError("invalid cursor")
+    return offset
+
+
 @dataclass
 class ThreadSummary:
     thread_id: int
@@ -41,7 +59,7 @@ def list_threads(db_path: Path, profile: SchemaProfile) -> list[ThreadSummary]:
         for row in rows:
             thread_id = row[0]
             display = recipient_display(row[1], row[2], row[3])
-            msg_count, oldest, newest = message_stats(conn, thread_id, tables)
+            msg_count, oldest, newest, _ = message_stats(conn, thread_id, tables)
             att_count = _attachment_count(conn, thread_id)
             summaries.append(ThreadSummary(
                 thread_id=thread_id,
@@ -67,7 +85,7 @@ def get_messages(
     conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
     try:
-        offset = json.loads(base64.b64decode(cursor).decode())["offset"] if cursor else 0
+        offset = _decode_cursor(cursor)
         messages, has_more = _fetch_messages(conn, thread_id, before, after, offset, page_size)
 
         next_cursor = None
