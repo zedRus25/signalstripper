@@ -1,0 +1,84 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any
+
+from starlette.applications import Starlette
+from starlette.requests import Request
+from starlette.responses import JSONResponse, Response
+from starlette.routing import Mount, Route
+from starlette.staticfiles import StaticFiles
+
+from signalstripper.analyze import GlobalSummary
+from signalstripper.schema.registry import SchemaProfile
+
+_STATIC_DIR = Path(__file__).parent / "static"
+
+ALLOWED_HOST = "127.0.0.1"
+
+
+class NonLoopbackBindError(ValueError):
+    pass
+
+
+def create_app(db_path: Path, profile: SchemaProfile, summary: GlobalSummary) -> Starlette:
+    state: dict[str, Any] = {"db_path": db_path, "profile": profile, "summary": summary}
+
+    async def analyze_endpoint(request: Request) -> Response:
+        import dataclasses
+        return JSONResponse(dataclasses.asdict(state["summary"]))
+
+    async def threads_endpoint(request: Request) -> Response:
+        from signalstripper.browse import list_threads
+        import dataclasses
+        threads = list_threads(state["db_path"], state["profile"])
+        return JSONResponse([dataclasses.asdict(t) for t in threads])
+
+    async def messages_endpoint(request: Request) -> Response:
+        from signalstripper.browse import get_messages
+        import dataclasses
+        thread_id = int(request.path_params["thread_id"])
+        params = request.query_params
+        page = get_messages(
+            state["db_path"],
+            state["profile"],
+            thread_id,
+            before=int(params["before"]) if "before" in params else None,
+            after=int(params["after"]) if "after" in params else None,
+            cursor=params.get("cursor"),
+        )
+        return JSONResponse(dataclasses.asdict(page))
+
+    async def emit_endpoint(request: Request) -> Response:
+        from signalstripper.select import SelectionSet, ThreadSelection
+        from signalstripper.emit import emit_reclaim_command
+
+        body = await request.json()
+        selections = [
+            ThreadSelection(**sel) for sel in body.get("selections", [])
+        ]
+        sel_set = SelectionSet(selections=selections)
+        output_path = Path(body.get("output_path", str(state["db_path"].with_suffix(".stripped.db"))))
+        cmd = emit_reclaim_command(state["db_path"], output_path, sel_set, state["summary"])
+        return Response(cmd, media_type="text/plain")
+
+    routes = [
+        Route("/api/analyze", analyze_endpoint),
+        Route("/api/threads", threads_endpoint),
+        Route("/api/threads/{thread_id:int}/messages", messages_endpoint),
+        Route("/api/emit", emit_endpoint, methods=["POST"]),
+        Mount("/", app=StaticFiles(directory=str(_STATIC_DIR), html=True)),
+    ]
+
+    return Starlette(routes=routes)
+
+
+def serve(app: Starlette, host: str = "127.0.0.1", port: int = 8765) -> None:
+    if host != ALLOWED_HOST:
+        raise NonLoopbackBindError(
+            f"signalstripper refuses to bind to {host!r}. "
+            f"Only {ALLOWED_HOST!r} is permitted."
+        )
+    import uvicorn
+    uvicorn.run(app, host=host, port=port)

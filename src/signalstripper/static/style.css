@@ -1,0 +1,65 @@
+/* Adapted from bepaald signalbackup-tools export stylesheet for visual familiarity */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+  background: #f0f0f0;
+  color: #1a1a1a;
+  padding: 1rem;
+}
+
+header {
+  background: #2c6bed;
+  color: #fff;
+  padding: 1rem 1.5rem;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+}
+header h1 { font-size: 1.5rem; }
+header .subtitle { opacity: 0.8; font-size: 0.875rem; }
+
+main { display: grid; gap: 1.5rem; }
+
+section {
+  background: #fff;
+  border-radius: 8px;
+  padding: 1.25rem 1.5rem;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+section h2 { font-size: 1rem; margin-bottom: 1rem; color: #2c6bed; }
+
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid #eee; }
+th { font-weight: 600; color: #555; font-size: 0.8125rem; }
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: #f8f8f8; }
+
+select { font-size: 0.8125rem; padding: 0.2rem 0.4rem; border: 1px solid #ccc; border-radius: 4px; }
+
+button {
+  background: #2c6bed;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 0.6rem 1.25rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+}
+button:hover { background: #1a56c4; }
+
+pre {
+  background: #1a1a1a;
+  color: #e8e8e8;
+  border-radius: 6px;
+  padding: 1rem;
+  overflow-x: auto;
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  margin-top: 1rem;
+  white-space: pre-wrap;
+}
+
+.note { color: #888; font-size: 0.8125rem; margin-bottom: 0.75rem; }
+#estimate { font-weight: 600; margin-bottom: 0.75rem; }
+#summary { font-size: 0.875rem; line-height: 1.8; }

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>signalstripper</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <h1>signalstripper</h1>
+    <p class="subtitle">Signal Backup Analysis &amp; Reclaim Tool</p>
+  </header>
+
+  <main>
+    <section id="analyze-section">
+      <h2>Storage Attribution</h2>
+      <div id="summary"></div>
+    </section>
+
+    <section id="threads-section">
+      <h2>Threads</h2>
+      <table id="threads-table">
+        <thead>
+          <tr>
+            <th><input type="checkbox" id="select-all"></th>
+            <th>Conversation</th>
+            <th>Messages</th>
+            <th>Attachments</th>
+            <th>Size</th>
+            <th>Date range</th>
+            <th>Intent</th>
+          </tr>
+        </thead>
+        <tbody id="threads-body"></tbody>
+      </table>
+    </section>
+
+    <section id="emit-section">
+      <h2>Generate Reclaim Command</h2>
+      <p class="note">The command is shown below for manual review and execution. signalstripper never runs it.</p>
+      <div id="estimate"></div>
+      <button id="generate-btn">Generate command</button>
+      <pre id="command-output"></pre>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>

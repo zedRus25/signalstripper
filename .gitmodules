@@ -1,0 +1,3 @@
+[submodule "vendor/signalbackup-tools"]
+	path = vendor/signalbackup-tools
+	url = https://github.com/bepaald/signalbackup-tools
